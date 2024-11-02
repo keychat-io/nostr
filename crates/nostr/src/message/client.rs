@@ -21,7 +21,7 @@ use crate::{Event, Filter, JsonUtil, SubscriptionId};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClientMessage {
     /// Event
-    Event(Box<Event>),
+    Event(Box<Event>, Option<String>),
     /// Req
     Req {
         /// Subscription ID
@@ -91,7 +91,12 @@ impl ClientMessage {
     /// Create `EVENT` message
     #[inline]
     pub fn event(event: Event) -> Self {
-        Self::Event(Box::new(event))
+        Self::Event(Box::new(event), None)
+    }
+    /// Create `EVENT` message
+    #[inline]
+    pub fn event_with(event: Event, msg: Option<String>) -> Self {
+        Self::Event(Box::new(event), msg)
     }
 
     /// Create `REQ` message
@@ -160,7 +165,7 @@ impl ClientMessage {
     /// Check if is an `EVENT` message
     #[inline]
     pub fn is_event(&self) -> bool {
-        matches!(self, ClientMessage::Event(_))
+        matches!(self, ClientMessage::Event(_, _))
     }
 
     /// Check if is an `REQ` message
@@ -184,7 +189,8 @@ impl ClientMessage {
     /// Serialize as [`Value`]
     pub fn as_value(&self) -> Value {
         match self {
-            Self::Event(event) => json!(["EVENT", event]),
+            Self::Event(event, None) => json!(["EVENT", event]),
+            Self::Event(event, Some(s)) => json!(["EVENT", event, s]),
             Self::Req {
                 subscription_id,
                 filters,

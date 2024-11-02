@@ -177,7 +177,21 @@ pub struct FeeSchedule {
     /// The duration for which the fee is valid
     pub period: Option<i32>,
     /// The event kinds the fee allows the client to publish to the relay
-    pub kinds: Option<Vec<String>>,
+    pub kinds: Option<Vec<u64>>,
+    // Cashu
+    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Pament method
+    pub method: Option<PaymentMethod>,
+}
+
+/// for Cashu
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum PaymentMethod {
+    /// Cashu
+    Cashu {
+        /// mints
+        mints: Vec<String>,
+    },
 }
 
 impl RelayInformationDocument {

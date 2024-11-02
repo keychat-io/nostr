@@ -1137,6 +1137,25 @@ impl InternalRelay {
         events: Vec<Event>,
         opts: RelaySendOptions,
     ) -> Result<(), Error> {
+        self.batch_event_with(
+            events,
+            opts,
+            |_, e| async move { Ok(ClientMessage::event(e)) },
+        )
+        .await
+    }
+
+    #[tracing::instrument(skip_all, level = "trace")]
+    pub async fn batch_event_with<F, Fut>(
+        &self,
+        events: Vec<Event>,
+        opts: RelaySendOptions,
+        event_handler: F,
+    ) -> Result<(), Error>
+    where
+        F: Fn(&Url, Event) -> Fut,
+        Fut: Future<Output = Result<ClientMessage, Error>>,
+    {
         if !self.opts.flags.can_write() {
             return Err(Error::WriteDisabled);
         }
@@ -1151,7 +1170,9 @@ impl InternalRelay {
 
         for event in events.into_iter() {
             missing.insert(event.id);
-            msgs.push(ClientMessage::event(event));
+            let e = event_handler(&self.url, event).await?;
+            msgs.push(e);
+            // msgs.push(ClientMessage::event(event));
         }
 
         let mut notifications = self.internal_notification_sender.subscribe();

@@ -1027,11 +1027,34 @@ impl Client {
     /// If `gossip` is enabled (see [`Options::gossip`]) the event will be sent also to NIP-65 relays (automatically discovered).
     #[inline]
     pub async fn send_event(&self, event: Event) -> Result<Output<EventId>, Error> {
+        self.send_event_with(event, |_, e| async move { Ok(ClientMessage::event(e)) })
+            .await
+    }
+
+    /// Send event
+    ///
+    /// Send [`Event`] to all relays with `WRITE` flag.
+    /// If `gossip` is enabled (see [`Options::gossip`]) the event will be sent also to NIP-65 relays (automatically discovered).
+    #[inline]
+    pub async fn send_event_with<F, Fut>(
+        &self,
+        event: Event,
+        event_handler: F,
+    ) -> Result<Output<EventId>, Error>
+    where
+        F: Fn(&Url, Event) -> Fut + Send + Sync + 'static + Clone,
+        Fut: std::future::Future<Output = Result<ClientMessage, nostr_relay_pool::relay::Error>>
+            + Send
+            + 'static,
+    {
         let opts: RelaySendOptions = self.opts.get_wait_for_send();
 
         // NOT gossip, send event to all relays
         if !self.opts.gossip {
-            return Ok(self.pool.send_event(event, opts).await?);
+            return Ok(self
+                .pool
+                .send_event_with(event, opts, event_handler)
+                .await?);
         }
 
         // ########## Gossip ##########
@@ -1080,7 +1103,10 @@ impl Client {
         let urls = outbox.union(&inbox);
 
         // Send event
-        Ok(self.pool.send_event_to(urls, event, opts).await?)
+        Ok(self
+            .pool
+            .send_event_to_with(urls, event, opts, event_handler)
+            .await?)
     }
 
     /// Send multiple events at once to all relays with `WRITE` flag (check [`RelayServiceFlags`] for more details).
@@ -1142,6 +1168,23 @@ impl Client {
     ) -> Result<Output<EventId>, Error> {
         let event: Event = self.sign_event_builder(builder).await?;
         self.send_event(event).await
+    }
+
+    ///
+    #[inline]
+    pub async fn send_event_builder_with<F, Fut>(
+        &self,
+        builder: EventBuilder,
+        event_handler: F,
+    ) -> Result<Output<EventId>, Error>
+    where
+        F: Fn(&Url, Event) -> Fut + Send + Sync + 'static + Clone,
+        Fut: std::future::Future<Output = Result<ClientMessage, nostr_relay_pool::relay::Error>>
+            + Send
+            + 'static,
+    {
+        let event: Event = self.sign_event_builder(builder).await?;
+        self.send_event_with(event, event_handler).await
     }
 
     /// Take an [`EventBuilder`], sign it by using the [`NostrSigner`] and broadcast to specific relays.

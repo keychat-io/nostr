@@ -154,7 +154,7 @@ impl InternalRelayPool {
             .collect()
     }
 
-    async fn write_relay_urls(&self) -> Vec<Url> {
+    pub(crate) async fn write_relay_urls(&self) -> Vec<Url> {
         let relays = self.relays.read().await;
         self.internal_relays_with_flag(&relays, RelayServiceFlags::WRITE, FlagCheck::All)
             .map(|(k, ..)| k.clone())
@@ -344,7 +344,7 @@ impl InternalRelayPool {
 
         // Save events into database
         for msg in msgs.iter() {
-            if let ClientMessage::Event(event) = msg {
+            if let ClientMessage::Event(event, _) = msg {
                 self.database.save_event(event).await?;
             }
         }
@@ -447,6 +447,33 @@ impl InternalRelayPool {
         })
     }
 
+    pub async fn send_event_to_with<I, U, F, Fut>(
+        &self,
+        urls: I,
+        event: Event,
+        opts: RelaySendOptions,
+        event_handler: F,
+    ) -> Result<Output<EventId>, Error>
+    where
+        I: IntoIterator<Item = U>,
+        U: TryIntoUrl,
+        Error: From<<U as TryIntoUrl>::Err>,
+        F: Fn(&Url, Event) -> Fut + Send + Sync + 'static + Clone,
+        Fut: std::future::Future<Output = Result<ClientMessage, crate::relay::Error>>
+            + Send
+            + 'static,
+    {
+        let event_id: EventId = event.id;
+        let output: Output<()> = self
+            .batch_event_to_with(urls, vec![event], opts, event_handler)
+            .await?;
+        Ok(Output {
+            val: event_id,
+            success: output.success,
+            failed: output.failed,
+        })
+    }
+
     pub async fn batch_event_to<I, U>(
         &self,
         urls: I,
@@ -458,6 +485,29 @@ impl InternalRelayPool {
         U: TryIntoUrl,
         Error: From<<U as TryIntoUrl>::Err>,
     {
+        self.batch_event_to_with(urls, events, opts, |_, e| async move {
+            Ok(ClientMessage::event(e))
+        })
+        .await
+    }
+
+    pub async fn batch_event_to_with<I, U, F, Fut>(
+        &self,
+        urls: I,
+        events: Vec<Event>,
+        opts: RelaySendOptions,
+        event_handler: F,
+    ) -> Result<Output<()>, Error>
+    where
+        I: IntoIterator<Item = U>,
+        U: TryIntoUrl,
+        Error: From<<U as TryIntoUrl>::Err>,
+        F: Fn(&Url, Event) -> Fut + Send + Sync + 'static + Clone,
+        Fut: std::future::Future<Output = Result<ClientMessage, crate::relay::Error>>
+            + Send
+            + 'static,
+    {
+        // nostr::nips::nip11::RelayInformationDocument
         // Compose URLs
         let urls: HashSet<Url> = urls
             .into_iter()
@@ -485,7 +535,7 @@ impl InternalRelayPool {
         if urls.len() == 1 {
             let url: Url = urls.into_iter().next().ok_or(Error::RelayNotFound)?;
             let relay: &Relay = self.internal_relay(&relays, &url)?;
-            relay.batch_event(events, opts).await?;
+            relay.batch_event_with(events, opts, event_handler).await?;
             Ok(Output::success(url, ()))
         } else {
             // Check if urls set contains ONLY already added relays
@@ -501,8 +551,9 @@ impl InternalRelayPool {
                 let relay: Relay = relay.clone();
                 let events: Vec<Event> = events.clone();
                 let result: Arc<Mutex<Output<()>>> = result.clone();
+                let event_handler = event_handler.clone();
                 let handle = thread::spawn(async move {
-                    match relay.batch_event(events, opts).await {
+                    match relay.batch_event_with(events, opts, event_handler).await {
                         Ok(_) => {
                             // Success, insert relay url in 'success' set result
                             let mut result = result.lock().await;

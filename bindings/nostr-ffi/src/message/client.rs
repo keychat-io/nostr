@@ -55,7 +55,7 @@ impl From<ClientMessageEnum> for nostr::ClientMessage {
     fn from(value: ClientMessageEnum) -> Self {
         match value {
             ClientMessageEnum::EventMsg { event } => {
-                Self::Event(Box::new(event.as_ref().deref().clone()))
+                Self::Event(Box::new(event.as_ref().deref().clone()), None)
             }
             ClientMessageEnum::Req {
                 subscription_id,
@@ -111,7 +111,7 @@ impl From<ClientMessageEnum> for nostr::ClientMessage {
 impl From<nostr::ClientMessage> for ClientMessageEnum {
     fn from(value: nostr::ClientMessage) -> Self {
         match value {
-            nostr::ClientMessage::Event(event) => Self::EventMsg {
+            nostr::ClientMessage::Event(event, _) => Self::EventMsg {
                 event: Arc::new(event.as_ref().to_owned().into()),
             },
             nostr::ClientMessage::Req {

@@ -305,6 +305,23 @@ impl Relay {
         self.inner.batch_event(events, opts).await
     }
 
+    /// Send multiple [`Event`] at once
+    #[inline]
+    pub async fn batch_event_with<F, Fut>(
+        &self,
+        events: Vec<Event>,
+        opts: RelaySendOptions,
+        event_handler: F,
+    ) -> Result<(), Error>
+    where
+        F: Fn(&Url, Event) -> Fut,
+        Fut: Future<Output = Result<ClientMessage, Error>>,
+    {
+        self.inner
+            .batch_event_with(events, opts, event_handler)
+            .await
+    }
+
     /// Send client authentication event
     ///
     /// <https://github.com/nostr-protocol/nips/blob/master/42.md>

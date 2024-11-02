@@ -224,7 +224,7 @@ impl InternalLocalRelay {
         msg: ClientMessage,
     ) -> Result<()> {
         match msg {
-            ClientMessage::Event(event) => {
+            ClientMessage::Event(event, _) => {
                 // Check rate limit
                 if let RateLimiterResponse::Limited =
                     session.check_rate_limit(self.rate_limit.notes_per_minute)

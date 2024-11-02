@@ -330,6 +330,26 @@ impl RelayPool {
         self.inner.send_event(event, opts).await
     }
 
+    /// Send event to all relays with `WRITE` flag (check [`RelayServiceFlags`] for more details).
+    #[inline]
+    pub async fn send_event_with<F, Fut>(
+        &self,
+        event: Event,
+        opts: RelaySendOptions,
+        event_handler: F,
+    ) -> Result<Output<EventId>, Error>
+    where
+        F: Fn(&Url, Event) -> Fut + Send + Sync + 'static + Clone,
+        Fut: std::future::Future<Output = Result<ClientMessage, crate::relay::Error>>
+            + Send
+            + 'static,
+    {
+        let urls: Vec<Url> = self.inner.write_relay_urls().await;
+        self.inner
+            .send_event_to_with(urls, event, opts, event_handler)
+            .await
+    }
+
     /// Send multiple events at once to all relays with `WRITE` flag (check [`RelayServiceFlags`] for more details).
     #[inline]
     pub async fn batch_event(
@@ -354,6 +374,29 @@ impl RelayPool {
         Error: From<<U as TryIntoUrl>::Err>,
     {
         self.inner.send_event_to(urls, event, opts).await
+    }
+
+    /// Send event to specific relays
+    #[inline]
+    pub async fn send_event_to_with<I, U, F, Fut>(
+        &self,
+        urls: I,
+        event: Event,
+        opts: RelaySendOptions,
+        event_handler: F,
+    ) -> Result<Output<EventId>, Error>
+    where
+        I: IntoIterator<Item = U>,
+        U: TryIntoUrl,
+        Error: From<<U as TryIntoUrl>::Err>,
+        F: Fn(&Url, Event) -> Fut + Send + Sync + 'static + Clone,
+        Fut: std::future::Future<Output = Result<ClientMessage, crate::relay::Error>>
+            + Send
+            + 'static,
+    {
+        self.inner
+            .send_event_to_with(urls, event, opts, event_handler)
+            .await
     }
 
     /// Send multiple events at once to specific relays
